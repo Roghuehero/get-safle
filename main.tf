@@ -12,6 +12,10 @@ variable "gcp_credentials" {
 # Create GCP Network
 resource "google_compute_network" "vpc_network" {
   name = "get-safle-vpc-network"
+  
+  lifecycle {
+    ignore_changes = [name]
+  }
 }
 
 # Create Subnet
@@ -20,6 +24,22 @@ resource "google_compute_subnetwork" "subnet" {
   region        = "asia-south2"
   network       = google_compute_network.vpc_network.id
   ip_cidr_range = "10.0.0.0/16"
+
+  lifecycle {
+    ignore_changes = [name, ip_cidr_range]
+  }
+}
+
+# Null resource to check if Cloud SQL instance already exists
+resource "null_resource" "check_db_exists" {
+  provisioner "local-exec" {
+    command = "gcloud sql instances describe get-safle-instance --project=get-safle"
+    interpreter = ["/bin/bash", "-c"]
+  }
+
+  triggers = {
+    always_run = "${timestamp()}"
+  }
 }
 
 # Create GCP Managed Database (Cloud SQL)
@@ -31,11 +51,24 @@ resource "google_sql_database_instance" "db_instance" {
   settings {
     tier = "db-f1-micro"
   }
+
+  depends_on = [null_resource.check_db_exists]
+
+  lifecycle {
+    ignore_changes = [name, settings]
+  }
 }
 
+# Create Cloud SQL Database only if it does not already exist
 resource "google_sql_database" "db" {
   name     = "get-safle"
   instance = google_sql_database_instance.db_instance.name
+
+  depends_on = [null_resource.check_db_exists]
+  
+  lifecycle {
+    ignore_changes = [name]
+  }
 }
 
 # Create Instance Template for Auto-Scaling Group
@@ -54,41 +87,30 @@ resource "google_compute_instance_template" "app_template" {
     network    = google_compute_network.vpc_network.id
     subnetwork = google_compute_subnetwork.subnet.id
   }
-  
-  # Updated startup script to install Nginx and run the Node.js app
+
   metadata_startup_script = <<-EOF
     #!/bin/bash
 
-    # Update package lists
     apt-get update
-
-    # Install Nginx
     apt-get install -y nginx
 
-    # Remove default Nginx configuration
     rm /etc/nginx/sites-enabled/default
 
-    # Create new Nginx configuration for the Node.js app with HTTPS setup
     cat <<EOT >> /etc/nginx/sites-available/myapp
     server {
         listen 80;
         server_name get-safle.sabtech.cloud;
-
-        # Redirect all HTTP traffic to HTTPS
         return 301 https://\$host\$request_uri;
     }
-
     server {
         listen 443 ssl;
         server_name get-safle.sabtech.cloud;
-
         ssl_certificate /etc/letsencrypt/live/get-safle.sabtech.cloud/fullchain.pem;
         ssl_certificate_key /etc/letsencrypt/live/get-safle.sabtech.cloud/privkey.pem;
         include /etc/letsencrypt/options-ssl-nginx.conf;
         ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
-
         location / {
-            proxy_pass http://localhost:3000; # Change port if needed
+            proxy_pass http://localhost:3000;
             proxy_http_version 1.1;
             proxy_set_header Upgrade \$http_upgrade;
             proxy_set_header Connection 'upgrade';
@@ -98,15 +120,17 @@ resource "google_compute_instance_template" "app_template" {
     }
     EOT
 
-    # Enable the new site and restart Nginx
     ln -s /etc/nginx/sites-available/myapp /etc/nginx/sites-enabled/
     service nginx restart
 
-    # Run the Node.js app
     docker run -d -p 3000:3000 asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:latest  
   EOF
 
   tags = ["web"]
+
+  lifecycle {
+    ignore_changes = [name, machine_type]
+  }
 }
 
 # Health Check
@@ -120,6 +144,10 @@ resource "google_compute_health_check" "app_health_check" {
   http_health_check {
     port = 80
   }
+
+  lifecycle {
+    ignore_changes = [name]
+  }
 }
 
 # Load Balancer Backend Service
@@ -131,19 +159,31 @@ resource "google_compute_backend_service" "app_backend" {
     group = google_compute_region_instance_group_manager.app_group.instance_group
   }
 
-  depends_on = [google_compute_health_check.app_health_check]  
+  depends_on = [google_compute_health_check.app_health_check]
+
+  lifecycle {
+    ignore_changes = [name]
+  }
 }
 
 # URL Map for Load Balancer
 resource "google_compute_url_map" "app_url_map" {
   name            = "app-url-map"
   default_service = google_compute_backend_service.app_backend.id
+
+  lifecycle {
+    ignore_changes = [name]
+  }
 }
 
 # HTTP Proxy
 resource "google_compute_target_http_proxy" "app_http_proxy" {
   name    = "app-http-proxy"
   url_map = google_compute_url_map.app_url_map.id
+
+  lifecycle {
+    ignore_changes = [name]
+  }
 }
 
 # Global Forwarding Rule for Load Balancer
@@ -152,6 +192,10 @@ resource "google_compute_global_forwarding_rule" "app_forwarding_rule" {
   target              = google_compute_target_http_proxy.app_http_proxy.id
   port_range          = "80"
   load_balancing_scheme = "EXTERNAL"
+
+  lifecycle {
+    ignore_changes = [name]
+  }
 }
 
 # Create Instance Group Manager
@@ -182,5 +226,9 @@ resource "google_compute_region_autoscaler" "app_autoscaler" {
     cpu_utilization {
       target = 0.6
     }
+  }
+
+  lifecycle {
+    ignore_changes = [name]
   }
 }
