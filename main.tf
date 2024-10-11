@@ -1,34 +1,51 @@
 provider "google" {
-  project = "get-safle"
-  region = "asia-south2"
+  project     = "get-safle"
+  region      = "asia-south2"
   credentials = var.gcp_credentials
 }
 
 variable "gcp_credentials" {
-  type = string
-  sensitive = true
-}
-variable "ssh_public_key" {
-  type = string
+  type      = string
   sensitive = true
 }
 
-# Create GCP Network
-resource "google_compute_network" "vpc_network" {
+variable "ssh_public_key" {
+  type      = string
+  sensitive = true
+}
+
+# Use existing VPC Network if available, otherwise create new
+data "google_compute_network" "existing_vpc_network" {
   name = "get-safle-vpc-network"
 }
 
-# Create Subnet
-resource "google_compute_subnetwork" "subnet" {
-  name = "my-subnet"
+resource "google_compute_network" "vpc_network3" {
+  count = length(data.google_compute_network.existing_vpc_network.networks) == 0 ? 1 : 0
+  name  = "get-safle-vpc-network3"
+}
+
+# Use existing Subnet if available, otherwise create new
+data "google_compute_subnetwork" "existing_subnet" {
+  name   = "my-subnet"
   region = "asia-south2"
-  network = google_compute_network.vpc_network.id
+}
+
+resource "google_compute_subnetwork" "subnet3" {
+  count         = length(data.google_compute_subnetwork.existing_subnet.subnetworks) == 0 ? 1 : 0
+  name          = "my-subnet3"
+  region        = "asia-south2"
+  network       = google_compute_network.vpc_network3.id
   ip_cidr_range = "10.0.0.0/16"
 }
 
-# Create GCP Managed Database (Cloud SQL)
-resource "google_sql_database_instance" "db_instance" {
+# Use existing SQL Database instance if available, otherwise create new
+data "google_sql_database_instance" "existing_db_instance" {
   name = "get-safle-instance"
+}
+
+resource "google_sql_database_instance" "db_instance3" {
+  count = length(data.google_sql_database_instance.existing_db_instance.instances) == 0 ? 1 : 0
+  name  = "get-safle-instance3"
   database_version = "POSTGRES_13"
   region = "asia-south2"
 
@@ -37,47 +54,41 @@ resource "google_sql_database_instance" "db_instance" {
   }
 }
 
-resource "google_sql_database" "db" {
-  name = "get-safle"
-  instance = google_sql_database_instance.db_instance.name
+resource "google_sql_database" "db3" {
+  count    = length(data.google_sql_database_instance.existing_db_instance.instances) == 0 ? 1 : 0
+  name     = "get-safle3"
+  instance = google_sql_database_instance.db_instance3.name
 }
 
-# Create Instance Template for Auto-Scaling Group
-resource "google_compute_instance_template" "app_template" {
-  name = "get-safle-template"
+# Instance Template with startup script and SSH
+resource "google_compute_instance_template" "app_template3" {
+  name = "get-safle-template3"
 
   machine_type = "n1-standard-1"
 
   disk {
     source_image = "projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts"
-    auto_delete = true
-    boot = true
+    auto_delete  = true
+    boot         = true
   }
 
   network_interface {
-    network = google_compute_network.vpc_network.id
-    subnetwork = google_compute_subnetwork.subnet.id
+    network    = google_compute_network.vpc_network3.id
+    subnetwork = google_compute_subnetwork.subnet3.id
   }
 
   metadata_startup_script = <<-EOF
     #!/bin/bash
 
-    # Update package lists
     apt-get update
-
-    # Install Nginx
     apt-get install -y nginx
 
-    # Remove default Nginx configuration
     rm /etc/nginx/sites-enabled/default
 
-    # Create new Nginx configuration for the Node.js app with HTTPS setup
     cat <<EOT >> /etc/nginx/sites-available/myapp
     server {
       listen 80;
       server_name get-safle.sabtech.cloud;
-
-      # Redirect all HTTP traffic to HTTPS
       return 301 https://\$host\$request_uri;
     }
 
@@ -91,7 +102,7 @@ resource "google_compute_instance_template" "app_template" {
       ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
       location / {
-        proxy_pass http://localhost:3000; # Change port if needed
+        proxy_pass http://localhost:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -101,14 +112,11 @@ resource "google_compute_instance_template" "app_template" {
     }
     EOT
 
-    # Enable the new site and restart Nginx
     ln -s /etc/nginx/sites-available/myapp /etc/nginx/sites-enabled/
     service nginx restart
 
-    # Run the Node.js app
     docker run -d -p 3000:3000 asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:latest
 
-    # Add SSH key to authorized_keys
     echo "${var.ssh_public_key}" >> /home/ubuntu/.ssh/authorized_keys
     chmod 600 /home/ubuntu/.ssh/authorized_keys
   EOF
@@ -117,11 +125,11 @@ resource "google_compute_instance_template" "app_template" {
 }
 
 # Health Check
-resource "google_compute_health_check" "app_health_check" {
-  name = "app-health-check"
-  check_interval_sec = 5
-  timeout_sec = 5
-  healthy_threshold = 2
+resource "google_compute_health_check" "app_health_check3" {
+  name = "app-health-check3"
+  check_interval_sec  = 5
+  timeout_sec         = 5
+  healthy_threshold   = 2
   unhealthy_threshold = 2
 
   http_health_check {
@@ -129,47 +137,47 @@ resource "google_compute_health_check" "app_health_check" {
   }
 }
 
-# Load Balancer Backend Service
-resource "google_compute_backend_service" "app_backend" {
-  name = "app-backend-service"
-  health_checks = [google_compute_health_check.app_health_check.id]
+# Backend Service for Load Balancer
+resource "google_compute_backend_service" "app_backend3" {
+  name         = "app-backend-service3"
+  health_checks = [google_compute_health_check.app_health_check3.id]
 
   backend {
-    group = google_compute_region_instance_group_manager.app_group.instance_group
+    group = google_compute_region_instance_group_manager.app_group3.instance_group
   }
 
-  depends_on = [google_compute_health_check.app_health_check]
+  depends_on = [google_compute_health_check.app_health_check3]
 }
 
 # URL Map for Load Balancer
-resource "google_compute_url_map" "app_url_map" {
-  name = "app-url-map"
-  default_service = google_compute_backend_service.app_backend.id
+resource "google_compute_url_map" "app_url_map3" {
+  name           = "app-url-map3"
+  default_service = google_compute_backend_service.app_backend3.id
 }
 
-# HTTP Proxy
-resource "google_compute_target_http_proxy" "app_http_proxy" {
-  name = "app-http-proxy"
-  url_map = google_compute_url_map.app_url_map.id
+# HTTP Proxy for Load Balancer
+resource "google_compute_target_http_proxy" "app_http_proxy3" {
+  name    = "app-http-proxy3"
+  url_map = google_compute_url_map.app_url_map3.id
 }
 
 # Global Forwarding Rule for Load Balancer
-resource "google_compute_global_forwarding_rule" "app_forwarding_rule" {
-  name = "app-forwarding-rule"
-  target = google_compute_target_http_proxy.app_http_proxy.id
-  port_range = "80"
-  load_balancing_scheme = "EXTERNAL"
+resource "google_compute_global_forwarding_rule" "app_forwarding_rule3" {
+  name                   = "app-forwarding-rule3"
+  target                 = google_compute_target_http_proxy.app_http_proxy3.id
+  port_range             = "80"
+  load_balancing_scheme  = "EXTERNAL"
 }
 
-# Create Instance Group Manager
-resource "google_compute_region_instance_group_manager" "app_group" {
-  name = "app-instance-group"
-  region = "asia-south2"
-  base_instance_name = "app-instance"
-  target_size = 1
+# Instance Group Manager
+resource "google_compute_region_instance_group_manager" "app_group3" {
+  name              = "app-instance-group3"
+  region            = "asia-south2"
+  base_instance_name = "app-instance3"
+  target_size       = 1
 
   version {
-    instance_template = google_compute_instance_template.app_template.id
+    instance_template = google_compute_instance_template.app_template3.id
   }
 
   lifecycle {
@@ -178,10 +186,10 @@ resource "google_compute_region_instance_group_manager" "app_group" {
 }
 
 # Autoscaler
-resource "google_compute_region_autoscaler" "app_autoscaler" {
-  name = "app-autoscaler"
-  region = "asia-south2"
-  target = google_compute_region_instance_group_manager.app_group.id
+resource "google_compute_region_autoscaler" "app_autoscaler3" {
+  name     = "app-autoscaler3"
+  region   = "asia-south2"
+  target   = google_compute_region_instance_group_manager.app_group3.id
 
   autoscaling_policy {
     min_replicas = 1
