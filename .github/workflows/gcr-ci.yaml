@@ -44,9 +44,10 @@ jobs:
     - name: Deploy to existing instance
       env:
         GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}  
-        INSTANCE_IP: 34.131.250.21  
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}  # Add your SSH private key to GitHub secrets
+        INSTANCE_IP: 34.131.250.21  # Replace with your instance's public IP
       run: |
+        mkdir -p ~/.ssh  # Create the .ssh directory if it doesn't exist
         echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
         ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@$INSTANCE_IP << 'EOF'
@@ -55,3 +56,4 @@ jobs:
           docker rm $(docker ps -aq --filter "name=get-safle") || true
           docker run -d --name get-safle -p 80:80 asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:${{ github.ref_name }}-${{ github.sha }}
         EOF
+    
