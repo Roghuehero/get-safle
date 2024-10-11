@@ -25,13 +25,22 @@ resource "google_compute_network" "vpc_network3" {
   name  = "get-safle-vpc-network"
 }
 
-# Subnet (created only if network is created)
+# Subnetwork (for new or existing network)
 resource "google_compute_subnetwork" "subnet3" {
-  count       = length(data.google_compute_network.existing_vpc_network3.name) == 0 ? 1 : 0
-  name        = "get-safle-subnet"
-  region      = "asia-south2"
-  network     = google_compute_network.vpc_network3[0].id
+  count        = length(data.google_compute_network.existing_vpc_network3.name) == 0 ? 1 : 0
+  name         = "get-safle-subnet"
+  region       = "asia-south2"
+  network      = google_compute_network.vpc_network3[0].id
   ip_cidr_range = "10.0.0.0/16"
+}
+
+# Subnetwork for existing network
+resource "google_compute_subnetwork" "existing_subnet3" {
+  count        = length(data.google_compute_network.existing_vpc_network3.name) != 0 ? 1 : 0
+  name         = "get-safle-subnet"
+  region       = "asia-south2"
+  network      = data.google_compute_network.existing_vpc_network3.id
+  ip_cidr_range = "10.0.0.0/16"  # Adjust CIDR as needed
 }
 
 # Instance Template
@@ -47,7 +56,7 @@ resource "google_compute_instance_template" "app_template3" {
 
   network_interface {
     network    = data.google_compute_network.existing_vpc_network3.id
-    subnetwork = google_compute_subnetwork.subnet3[0].id
+    subnetwork = length(data.google_compute_network.existing_vpc_network3.name) != 0 ? google_compute_subnetwork.existing_subnet3[0].id : google_compute_subnetwork.subnet3[0].id
   }
 
   metadata_startup_script = <<-EOF
@@ -96,6 +105,8 @@ resource "google_compute_backend_service" "app_backend3" {
   backend {
     group = google_compute_region_instance_group_manager.app_group3.instance_group
   }
+
+  # No need to specify region, as it defaults to the region of the backend
 }
 
 # URL Map for Load Balancer
