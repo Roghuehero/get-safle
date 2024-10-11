@@ -45,5 +45,7 @@ jobs:
       env:
         GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
       run: |
+        echo $GCP_SA_KEY > gcp-credentials.json    # Store secret in file
         terraform init
-        terraform apply -auto-approve -var "gcp_credentials=${{ secrets.GCP_SA_KEY }}"
+        terraform apply -auto-approve -var="gcp_credentials=$(<gcp-credentials.json)"  # Inject file content properly
+        rm gcp-credentials.json  # Clean up
