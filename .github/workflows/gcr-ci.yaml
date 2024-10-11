@@ -1,33 +1,36 @@
-name: get-safle
+name: GCR-CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "*" ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+    - name: Check out code
+      uses: actions/checkout@v2
 
-    - name: Set up Google Cloud SDK
-      uses: google-github-actions/setup-gcloud@v1
-      with:
-        project_id: ${{ secrets.GCP_PROJECT_ID }}
-        service_account_key: ${{ secrets.GCP_SA_KEY }}
-        export_default_credentials: true
-
-    - name: Configure Docker for Google Artifact Registry
-      run: gcloud auth configure-docker asia-south2-docker.pkg.dev
-
+    - name: Authenticate
+      env: 
+        GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}  # Your service account key secret
+      run: |
+        echo $GCP_SA_KEY > ./get-safle-e9bb009adc35.json
+        gcloud auth activate-service-account --key-file=./get-safle-e9bb009adc35.json
+        gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://asia-south2-docker.pkg.dev
+        gcloud auth configure-docker asia-south2-docker.pkg.dev
+        rm ./get-safle-e9bb009adc35.json
+        
     - name: Build Docker image
-      run: docker build -t asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:latest .
-
+      run: |
+        docker build . -t asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:${{ github.ref_name }}-${GITHUB_SHA::7}
+    
     - name: Push Docker image to Google Artifact Registry
-      run: docker push asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:latest
+      run: |
+        docker push asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:${{ github.ref_name }}-${GITHUB_SHA::7}
 
     - name: Run unit tests
       run: npm test
@@ -37,7 +40,4 @@ jobs:
         terraform init
         terraform apply -auto-approve
 
-    - name: Destroy Infrastructure (optional)
-      if: success() # Change this condition if you want to destroy on failure or any other criteria
-      run: |
-        terraform destroy -auto-approve
+   
