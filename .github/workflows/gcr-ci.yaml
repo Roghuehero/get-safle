@@ -3,8 +3,6 @@ name: GCR-CI
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "*" ]
 
 jobs:
   build:
@@ -22,30 +20,32 @@ jobs:
     - name: Install dependencies
       run: npm install  
 
-    - name: Authenticate
+    - name: Authenticate with Google Cloud
       env: 
         GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }} 
       run: |
-        echo $GCP_SA_KEY > ./get-safle-e9bb009adc35.json
-        gcloud auth activate-service-account --key-file=./get-safle-e9bb009adc35.json
+        echo $GCP_SA_KEY > ./gcp-credentials.json
+        gcloud auth activate-service-account --key-file=./gcp-credentials.json
         gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://asia-south2-docker.pkg.dev
         gcloud auth configure-docker asia-south2-docker.pkg.dev
-        rm ./get-safle-e9bb009adc35.json
+        rm ./gcp-credentials.json
         
     - name: Build Docker image
       run: |
-        docker build . -t asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:${{ github.ref_name }}-${GITHUB_SHA::7}
-    
+        docker build . -t asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:${{ github.ref_name }}-${{ github.sha }}
+
     - name: Push Docker image to Google Artifact Registry
       run: |
-        docker push asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:${{ github.ref_name }}-${GITHUB_SHA::7}
+        docker push asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:${{ github.ref_name }}-${{ github.sha }}
 
     - name: Run unit tests
       run: npm test  
 
     - name: Deploy with Terraform
+      env:
+        GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }} 
       run: |
-        terraform init
-        terraform apply -auto-approve
-
-    
+        echo $GCP_SA_KEY > ./gcp-credentials.json
+        terraform init -backend-config="credentials=./gcp-credentials.json"
+        terraform apply -var "gcp_credentials=$(cat ./gcp-credentials.json)" -auto-approve
+        rm ./gcp-credentials.json
