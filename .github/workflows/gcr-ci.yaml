@@ -41,19 +41,18 @@ jobs:
     - name: Run unit tests
       run: npm test  
 
-    - name: Deploy to existing instance
+    - name: Deploy to existing instance using SSH
       env:
-        GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
         SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}  
-        INSTANCE_IP: 34.131.250.21 
+        INSTANCE_IP: "34.131.250.21"  
       run: |
         mkdir -p ~/.ssh  # Create the .ssh directory if it doesn't exist
-        eval "$(ssh-agent -s)"  # Start the SSH agent
-        echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -  # Add the SSH private key
-        ssh-keyscan -H $INSTANCE_IP >> ~/.ssh/known_hosts  # Add instance to known hosts
-        ssh -o StrictHostKeyChecking=no ubuntu@$INSTANCE_IP << 'EOF'
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+        ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@$INSTANCE_IP << 'EOF'
           docker pull asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:${{ github.ref_name }}-${{ github.sha }}
-          docker stop $(docker ps -q --filter "name=get-safle") || true
-          docker rm $(docker ps -aq --filter "name=get-safle") || true
+          docker stop get-safle || true
+          docker rm get-safle || true
           docker run -d --name get-safle -p 80:80 asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:${{ github.ref_name }}-${{ github.sha }}
         EOF
