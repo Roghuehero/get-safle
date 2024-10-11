@@ -41,11 +41,23 @@ jobs:
     - name: Run unit tests
       run: npm test  
 
-    - name: Deploy with Terraform
+    - name: Terraform Plan
       env:
         GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}   # Add your SSH public key to GitHub secrets
       run: |
         echo $GCP_SA_KEY > gcp-credentials.json    # Store secret in file
         terraform init
-        terraform apply -auto-approve -var="gcp_credentials=$(<gcp-credentials.json)"  # Inject file content properly
+        terraform plan -var="gcp_credentials=$(<gcp-credentials.json)" -var="ssh_public_key=${SSH_PUBLIC_KEY}"  # Inject file content properly
         rm gcp-credentials.json  # Clean up
+
+    - name: Terraform Apply
+      if: success()
+      env:
+        GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+      run: |
+        echo $GCP_SA_KEY > gcp-credentials.json
+        terraform init
+        terraform apply -auto-approve -var="gcp_credentials=$(<gcp-credentials.json)" -var="ssh_public_key=${SSH_PUBLIC_KEY}"  # Inject SSH key properly
+        rm gcp-credentials.json
