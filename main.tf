@@ -112,6 +112,7 @@ resource "google_compute_instance_template" "app_template" {
 resource "google_compute_region_instance_group_manager" "app_group" {
   name                    = "app-instance-group"
   region                  = "asia-south2"
+  base_instance_name      = "app-instance"  # Add the base_instance_name argument
   version                 {
     instance_template = google_compute_instance_template.app_template.id
   }
