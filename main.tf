@@ -22,13 +22,7 @@ resource "google_compute_subnetwork" "subnet" {
   ip_cidr_range = "10.0.0.0/16"
 }
 
-# Check if the Cloud SQL instance already exists
-data "google_sql_database_instance" "existing_instance" {
-  name    = "get-safle-instance"
-  project = "get-safle"
-}
-
-# Create GCP Managed Database (Cloud SQL) with lifecycle settings
+# Create GCP Managed Database (Cloud SQL)
 resource "google_sql_database_instance" "db_instance" {
   name             = "get-safle-instance"
   database_version = "POSTGRES_13"
@@ -37,10 +31,6 @@ resource "google_sql_database_instance" "db_instance" {
   settings {
     tier = "db-f1-micro"
   }
-
-  lifecycle {
-    prevent_destroy = false
-  }
 }
 
 resource "google_sql_database" "db" {
@@ -48,18 +38,12 @@ resource "google_sql_database" "db" {
   instance = google_sql_database_instance.db_instance.name
 }
 
-# Check if the instance template already exists
-data "google_compute_instance_template" "existing_template" {
-  name    = "get-safle-template"
-  project = "get-safle"
-}
-
 # Create Instance Template for Auto-Scaling Group
 resource "google_compute_instance_template" "app_template" {
   name = "get-safle-template"
-
+  
   machine_type = "n1-standard-1"
-
+  
   disk {
     source_image = "projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts"
     auto_delete  = true
@@ -70,7 +54,7 @@ resource "google_compute_instance_template" "app_template" {
     network    = google_compute_network.vpc_network.id
     subnetwork = google_compute_subnetwork.subnet.id
   }
-
+  
   # Updated startup script to install Nginx and run the Node.js app
   metadata_startup_script = <<-EOF
     #!/bin/bash
@@ -123,10 +107,6 @@ resource "google_compute_instance_template" "app_template" {
   EOF
 
   tags = ["web"]
-
-  lifecycle {
-    prevent_destroy = false
-  }
 }
 
 # Health Check
