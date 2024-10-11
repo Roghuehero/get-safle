@@ -22,11 +22,18 @@ resource "google_compute_subnetwork" "subnet" {
   ip_cidr_range = "10.0.0.0/16"
 }
 
-# Create GCP Managed Database (Cloud SQL)
+# Check if the database instance already exists
+data "google_sql_database_instance" "existing_instance" {
+  name    = "get-safle-instance"
+  project = "get-safle"
+}
+
+# Create GCP Managed Database (Cloud SQL) only if it doesn't exist
 resource "google_sql_database_instance" "db_instance" {
-  name             = "get-safle-instance"
-  database_version = "POSTGRES_13"
-  region           = "asia-south2"
+  count             = length(data.google_sql_database_instance.existing_instance) == 0 ? 1 : 0
+  name              = "get-safle-instance"
+  database_version  = "POSTGRES_13"
+  region            = "asia-south2"
 
   settings {
     tier = "db-f1-micro"
@@ -35,11 +42,19 @@ resource "google_sql_database_instance" "db_instance" {
 
 resource "google_sql_database" "db" {
   name     = "get-safle"
-  instance = google_sql_database_instance.db_instance.name
+  instance = length(data.google_sql_database_instance.existing_instance) > 0 ? data.google_sql_database_instance.existing_instance.name : google_sql_database_instance.db_instance[0].name
 }
 
-# Create Instance Template for Auto-Scaling Group
+# Check if the instance template already exists
+data "google_compute_instance_template" "existing_template" {
+  name    = "get-safle-template"
+  project = "get-safle"
+}
+
+# Create Instance Template for Auto-Scaling Group only if it doesn't exist
 resource "google_compute_instance_template" "app_template" {
+  count = length(data.google_compute_instance_template.existing_template) == 0 ? 1 : 0
+  
   name = "get-safle-template"
 
   machine_type = "n1-standard-1"
@@ -54,7 +69,7 @@ resource "google_compute_instance_template" "app_template" {
     network    = google_compute_network.vpc_network.id
     subnetwork = google_compute_subnetwork.subnet.id
   }
-
+  
   # Updated startup script to install Nginx and run the Node.js app
   metadata_startup_script = <<-EOF
     #!/bin/bash
@@ -122,13 +137,38 @@ resource "google_compute_health_check" "app_health_check" {
   }
 }
 
+# Check if the instance group manager already exists
+data "google_compute_region_instance_group_manager" "existing_group" {
+  name    = "app-instance-group"
+  project = "get-safle"
+  region  = "asia-south2"
+}
+
+# Create Instance Group Manager
+resource "google_compute_region_instance_group_manager" "app_group" {
+  count = length(data.google_compute_region_instance_group_manager.existing_group) == 0 ? 1 : 0
+
+  name                    = "app-instance-group"
+  region                  = "asia-south2"
+  base_instance_name      = "app-instance" 
+  target_size             = 1
+
+  version {
+    instance_template = length(data.google_compute_instance_template.existing_template) > 0 ? data.google_compute_instance_template.existing_template.id : google_compute_instance_template.app_template[0].id
+  }
+
+  lifecycle {
+    ignore_changes = [target_size] 
+  }
+}
+
 # Load Balancer Backend Service
 resource "google_compute_backend_service" "app_backend" {
   name          = "app-backend-service"
   health_checks = [google_compute_health_check.app_health_check.id]
 
   backend {
-    group = google_compute_region_instance_group_manager.app_group.instance_group
+    group = google_compute_region_instance_group_manager.app_group[0].instance_group
   }
 
   depends_on = [google_compute_health_check.app_health_check]  
@@ -154,27 +194,11 @@ resource "google_compute_global_forwarding_rule" "app_forwarding_rule" {
   load_balancing_scheme = "EXTERNAL"
 }
 
-# Create Instance Group Manager
-resource "google_compute_region_instance_group_manager" "app_group" {
-  name                    = "app-instance-group"
-  region                  = "asia-south2"
-  base_instance_name      = "app-instance" 
-  target_size             = 1
-
-  version {
-    instance_template = google_compute_instance_template.app_template.id
-  }
-
-  lifecycle {
-    ignore_changes = [target_size] 
-  }
-}
-
 # Autoscaler
 resource "google_compute_region_autoscaler" "app_autoscaler" {
   name   = "app-autoscaler"
   region = "asia-south2"
-  target = google_compute_region_instance_group_manager.app_group.id
+  target = google_compute_region_instance_group_manager.app_group[0].id
 
   autoscaling_policy {
     min_replicas    = 1
