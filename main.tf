@@ -14,33 +14,40 @@ variable "ssh_public_key" {
   sensitive = true
 }
 
-# Use existing VPC Network if available, otherwise create new
+# Data source to check existing network
 data "google_compute_network" "existing_vpc_network" {
   name = "get-safle-vpc-network"
 }
 
+# Create VPC network only if it doesn't exist
 resource "google_compute_network" "vpc_network3" {
-  count = length(data.google_compute_network.existing_vpc_network.networks) == 0 ? 1 : 0
-  name  = "get-safle-vpc-network3"
+  count = data.google_compute_network.existing_vpc_network.id == "" ? 1 : 0
+
+  name = "get-safle-vpc-network"
 }
 
-# Use existing Subnet if available, otherwise create new
-data "google_compute_subnetwork" "existing_subnet" {
-  name   = "my-subnet"
-  region = "asia-south2"
-}
-
-resource "google_compute_subnetwork" "subnet3" {
-  count         = length(data.google_compute_subnetwork.existing_subnet.subnetworks) == 0 ? 1 : 0
-  name          = "my-subnet3"
-  region        = "asia-south2"
-  network       = google_compute_network.vpc_network3.id
-  ip_cidr_range = "10.0.0.0/16"
-}
-
-# Use existing SQL Database instance if available, otherwise create new
+# Data source to check existing SQL instance
 data "google_sql_database_instance" "existing_db_instance" {
   name = "get-safle-instance"
+}
+
+# Create Cloud SQL instance only if it doesn't exist
+resource "google_sql_database_instance" "db_instance3" {
+  count = data.google_sql_database_instance.existing_db_instance.id == "" ? 1 : 0
+
+  name             = "get-safle-instance"
+  database_version = "POSTGRES_13"
+  region           = "asia-south2"
+
+  settings {
+    tier = "db-f1-micro"
+  }
+}
+
+resource "google_sql_database" "db3" {
+  count    = google_sql_database_instance.db_instance3.count
+  name     = "get-safle"
+  instance = google_sql_database_instance.db_instance3.name
 }
 
 resource "google_sql_database_instance" "db_instance3" {
