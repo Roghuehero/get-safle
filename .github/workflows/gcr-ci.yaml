@@ -41,23 +41,17 @@ jobs:
     - name: Run unit tests
       run: npm test  
 
-    - name: Terraform Plan
+    - name: Deploy to existing instance
       env:
         GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-        SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}   # Add your SSH public key to GitHub secrets
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}  
+        INSTANCE_IP: 34.131.250.21  
       run: |
-        echo $GCP_SA_KEY > gcp-credentials.json    # Store secret in file
-        terraform init
-        terraform plan -var="gcp_credentials=$(<gcp-credentials.json)" -var="ssh_public_key=${SSH_PUBLIC_KEY}"  # Inject file content properly
-        rm gcp-credentials.json  # Clean up
-
-    - name: Terraform Apply
-      if: success()
-      env:
-        GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-        SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
-      run: |
-        echo $GCP_SA_KEY > gcp-credentials.json
-        terraform init
-        terraform apply -auto-approve -var="gcp_credentials=$(<gcp-credentials.json)" -var="ssh_public_key=${SSH_PUBLIC_KEY}"  # Inject SSH key properly
-        rm gcp-credentials.json
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@$INSTANCE_IP << 'EOF'
+          docker pull asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:${{ github.ref_name }}-${{ github.sha }}
+          docker stop $(docker ps -q --filter "name=get-safle") || true
+          docker rm $(docker ps -aq --filter "name=get-safle") || true
+          docker run -d --name get-safle -p 80:80 asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:${{ github.ref_name }}-${{ github.sha }}
+        EOF
