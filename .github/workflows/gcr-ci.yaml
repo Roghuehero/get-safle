@@ -29,18 +29,15 @@ jobs:
     - name: Push Docker image to Google Artifact Registry
       run: docker push asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:latest
 
-    - name: Deploy with Terraform
-      env:
-        GCP_CREDENTIALS: ${{ secrets.GCP_SA_KEY }}
-      run: |
-        terraform init
-        terraform apply -auto-approve -var "gcp_credentials=$GCP_CREDENTIALS"
-
     - name: Run unit tests
       run: npm test
 
-    - name: Deploy to cloud infrastructure
-      if: success()
+    - name: Deploy with Terraform
       run: |
         terraform init
-        terraform apply -auto-approve -var "gcp_credentials=$GCP_CREDENTIALS"
+        terraform apply -auto-approve
+
+    - name: Destroy Infrastructure (optional)
+      if: success() # Change this condition if you want to destroy on failure or any other criteria
+      run: |
+        terraform destroy -auto-approve
