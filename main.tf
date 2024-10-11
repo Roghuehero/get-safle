@@ -11,7 +11,7 @@ variable "gcp_credentials" {
 
 # Create GCP Network
 resource "google_compute_network" "vpc_network" {
-  name = "get-salfe-vpc-network"
+  name = "get-safle-vpc-network"
 }
 
 # Create Subnet
@@ -55,7 +55,6 @@ resource "google_compute_instance_template" "app_template" {
     subnetwork = google_compute_subnetwork.subnet.id
   }
 
-  # Updated startup script to install Nginx and run the Node.js app
   metadata_startup_script = <<-EOF
     #!/bin/bash
 
@@ -109,6 +108,17 @@ resource "google_compute_instance_template" "app_template" {
   tags = ["web"]
 }
 
+# Create Instance Group Manager
+resource "google_compute_region_instance_group_manager" "app_group" {
+  name                    = "app-instance-group"
+  region                  = "asia-south2"
+  version                 {
+    instance_template = google_compute_instance_template.app_template.id
+  }
+
+  target_size             = 1
+}
+
 # Health Check
 resource "google_compute_health_check" "app_health_check" {
   name                = "app-health-check"
@@ -148,9 +158,9 @@ resource "google_compute_target_http_proxy" "app_http_proxy" {
 
 # Global Forwarding Rule for Load Balancer
 resource "google_compute_global_forwarding_rule" "app_forwarding_rule" {
-  name                = "app-forwarding-rule"
-  target              = google_compute_target_http_proxy.app_http_proxy.id
-  port_range          = "80"
+  name                  = "app-forwarding-rule"
+  target                = google_compute_target_http_proxy.app_http_proxy.id
+  port_range            = "80"
   load_balancing_scheme = "EXTERNAL"
 }
 
@@ -161,8 +171,8 @@ resource "google_compute_region_autoscaler" "app_autoscaler" {
   target = google_compute_region_instance_group_manager.app_group.id
 
   autoscaling_policy {
-    min_replicas    = 1
-    max_replicas    = 3
+    min_replicas = 1
+    max_replicas = 3
     cpu_utilization {
       target = 0.6
     }
