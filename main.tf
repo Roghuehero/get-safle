@@ -1,7 +1,12 @@
 provider "google" {
   project     = "get-safle"
   region      = "asia-south2"
-  credentials = file("${path.module}/get-safle-e9bb009adc35.json")
+  credentials = jsondecode(var.gcp_credentials)
+}
+
+variable "gcp_credentials" {
+  type      = string
+  sensitive = true
 }
 
 # Create GCP Network
@@ -40,7 +45,7 @@ resource "google_compute_instance_template" "app_template" {
   machine_type = "n1-standard-1"
 
   disk {
-    source_image = "projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts" 
+    source_image = "projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts"
     auto_delete  = true
     boot         = true
   }
@@ -63,10 +68,24 @@ resource "google_compute_instance_template" "app_template" {
     # Remove default Nginx configuration
     rm /etc/nginx/sites-enabled/default
 
-    # Create new Nginx configuration for the Node.js app
+    # Create new Nginx configuration for the Node.js app with HTTPS setup
     cat <<EOT >> /etc/nginx/sites-available/myapp
     server {
         listen 80;
+        server_name get-safle.sabtech.cloud;
+
+        # Redirect all HTTP traffic to HTTPS
+        return 301 https://$host$request_uri;
+    }
+
+    server {
+        listen 443 ssl;
+        server_name get-safle.sabtech.cloud;
+
+        ssl_certificate /etc/letsencrypt/live/get-safle.sabtech.cloud/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/get-safle.sabtech.cloud/privkey.pem;
+        include /etc/letsencrypt/options-ssl-nginx.conf;
+        ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
         location / {
             proxy_pass http://localhost:3000; # Change port if needed
@@ -84,27 +103,10 @@ resource "google_compute_instance_template" "app_template" {
     service nginx restart
 
     # Run the Node.js app
-    docker run -d -p 3000:3000 your-docker-image  # Replace 'your-docker-image' with your actual Docker image name
+    docker run -d -p 3000:3000 asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:latest  
   EOF
 
   tags = ["web"]
-}
-
-# Managed Instance Group for Auto-Scaling
-resource "google_compute_region_instance_group_manager" "app_group" {
-  name               = "app-instance-group"
-  base_instance_name = "app-instance"
-  region             = "asia-south2"
-  target_size        = 1
-
-  version {
-    instance_template = google_compute_instance_template.app_template.id
-  }
-
-  auto_healing_policies {
-    health_check      = google_compute_health_check.app_health_check.id
-    initial_delay_sec = 30  
-  }
 }
 
 # Health Check
@@ -131,8 +133,6 @@ resource "google_compute_backend_service" "app_backend" {
 
   depends_on = [google_compute_health_check.app_health_check]  
 }
-
-
 
 # URL Map for Load Balancer
 resource "google_compute_url_map" "app_url_map" {
