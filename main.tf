@@ -1,12 +1,12 @@
 provider "google" {
   project     = "get-safle"
   region      = "asia-south2"
-  credentials = file(var.gcp_credentials_path) 
+  credentials = jsondecode(var.gcp_credentials)
 }
 
-variable "gcp_credentials_path" {
-  type = string
-  default = "./get-safle-e9bb009adc35.json"  
+variable "gcp_credentials" {
+  type      = string
+  sensitive = true
 }
 
 # Create GCP Network
@@ -75,7 +75,7 @@ resource "google_compute_instance_template" "app_template" {
         server_name get-safle.sabtech.cloud;
 
         # Redirect all HTTP traffic to HTTPS
-        return 301 https://$host$request_uri;
+        return 301 https://\$host\$request_uri;
     }
 
     server {
@@ -90,10 +90,10 @@ resource "google_compute_instance_template" "app_template" {
         location / {
             proxy_pass http://localhost:3000; # Change port if needed
             proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Upgrade \$http_upgrade;
             proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
-            proxy_cache_bypass $http_upgrade;
+            proxy_set_header Host \$host;
+            proxy_cache_bypass \$http_upgrade;
         }
     }
     EOT
@@ -152,6 +152,22 @@ resource "google_compute_global_forwarding_rule" "app_forwarding_rule" {
   target              = google_compute_target_http_proxy.app_http_proxy.id
   port_range          = "80"
   load_balancing_scheme = "EXTERNAL"
+}
+
+# Create Instance Group Manager
+resource "google_compute_region_instance_group_manager" "app_group" {
+  name                    = "app-instance-group"
+  region                  = "asia-south2"
+  base_instance_name      = "app-instance" 
+  target_size             = 1
+
+  version {
+    instance_template = google_compute_instance_template.app_template.id
+  }
+
+  lifecycle {
+    ignore_changes = [target_size] 
+  }
 }
 
 # Autoscaler
