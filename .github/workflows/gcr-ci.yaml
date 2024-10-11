@@ -45,8 +45,8 @@ jobs:
       env:
         GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
       run: |
-        echo $GCP_SA_KEY > ./gcp-credentials.json
+        echo "$GCP_SA_KEY" > ./gcp-credentials.json
         export GOOGLE_APPLICATION_CREDENTIALS="./gcp-credentials.json"
         terraform init
-        terraform apply -auto-approve
+        terraform apply -auto-approve -var "gcp_credentials=$(cat ./gcp-credentials.json)"
         rm ./gcp-credentials.json
