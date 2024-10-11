@@ -1,0 +1,46 @@
+name: get-safle
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Google Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+
+    - name: Configure Docker for Google Artifact Registry
+      run: gcloud auth configure-docker asia-south2-docker.pkg.dev
+
+    - name: Build Docker image
+      run: docker build -t asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:latest .
+
+    - name: Push Docker image to Google Artifact Registry
+      run: docker push asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:latest
+
+    - name: Deploy with Terraform
+      env:
+        GCP_CREDENTIALS: ${{ secrets.GCP_SA_KEY }}
+      run: |
+        terraform init
+        terraform apply -auto-approve -var "gcp_credentials=$GCP_CREDENTIALS"
+
+    - name: Run unit tests
+      run: npm test
+
+    - name: Deploy to cloud infrastructure
+      if: success()
+      run: |
+        terraform init
+        terraform apply -auto-approve -var "gcp_credentials=$GCP_CREDENTIALS"
