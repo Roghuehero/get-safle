@@ -1,7 +1,7 @@
 provider "google" {
   project     = "get-safle"
   region      = "asia-south2"
-  credentials = jsondecode(var.gcp_credentials)
+  credentials = var.gcp_credentials
 }
 
 variable "gcp_credentials" {
