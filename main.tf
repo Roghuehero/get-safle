@@ -10,7 +10,7 @@ variable "gcp_credentials" {
 }
 
 variable "ssh_public_key" {
-  type = string
+  type      = string
   sensitive = true
 }
 
@@ -19,19 +19,26 @@ data "google_compute_network" "existing_vpc_network3" {
   name = "get-safle-vpc-network"
 }
 
+# Data block to retrieve existing subnetwork (if any)
+data "google_compute_subnetwork" "existing_subnet" {
+  name    = "get-safle-subnet"
+  region  = "asia-south2"
+  network = data.google_compute_network.existing_vpc_network3.id
+}
+
 # If VPC network does not exist, create one
 resource "google_compute_network" "vpc_network3" {
   count = length(data.google_compute_network.existing_vpc_network3.name) == 0 ? 1 : 0
   name  = "get-safle-vpc-network"
 }
 
-# Subnet (created only if network is created)
+# Create a subnetwork only if it does not already exist
 resource "google_compute_subnetwork" "subnet3" {
-  count    = length(data.google_compute_network.existing_vpc_network3.name) == 0 ? 1 : 0
-  name     = "get-safle-subnet"
-  region   = "asia-south2"
-  network  = google_compute_network.vpc_network3[0].id
-  ip_cidr_range = "10.0.0.0/16"
+  count        = length(data.google_compute_subnetwork.existing_subnet.name) == 0 ? 1 : 0
+  name         = "get-safle-subnet"
+  region       = "asia-south2"
+  network      = google_compute_network.vpc_network3[0].id
+  ip_cidr_range = "10.0.1.0/24"  # Update this range to avoid conflicts
 }
 
 # Instance Template
@@ -47,7 +54,7 @@ resource "google_compute_instance_template" "app_template3" {
 
   network_interface {
     network    = data.google_compute_network.existing_vpc_network3.id
-    subnetwork = google_compute_subnetwork.subnet3[0].id
+    subnetwork = length(data.google_compute_subnetwork.existing_subnet.name) != 0 ? data.google_compute_subnetwork.existing_subnet.id : google_compute_subnetwork.subnet3[0].id
   }
 
   metadata_startup_script = <<-EOF
@@ -91,8 +98,8 @@ resource "google_compute_region_autoscaler" "app_autoscaler3" {
 
 # Load Balancer Backend Service
 resource "google_compute_backend_service" "app_backend3" {
-  name   = "get-safle-backend-service"
-  region = "asia-south2"
+  name = "get-safle-backend-service"
+
   backend {
     group = google_compute_region_instance_group_manager.app_group3.instance_group
   }
@@ -106,7 +113,7 @@ resource "google_compute_url_map" "app_url_map3" {
 
 # HTTP Proxy
 resource "google_compute_target_http_proxy" "app_http_proxy3" {
-  name   = "get-safle-http-proxy"
+  name    = "get-safle-http-proxy"
   url_map = google_compute_url_map.app_url_map3.id
 }
 
