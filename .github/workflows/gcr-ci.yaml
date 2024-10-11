@@ -14,9 +14,17 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v2
 
+    - name: Set up Node.js
+      uses: actions/setup-node@v2
+      with:
+        node-version: '21'  
+
+    - name: Install dependencies
+      run: npm install  
+
     - name: Authenticate
       env: 
-        GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}  # Your service account key secret
+        GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }} 
       run: |
         echo $GCP_SA_KEY > ./get-safle-e9bb009adc35.json
         gcloud auth activate-service-account --key-file=./get-safle-e9bb009adc35.json
@@ -33,11 +41,11 @@ jobs:
         docker push asia-south2-docker.pkg.dev/get-safle/get-safle/app-image:${{ github.ref_name }}-${GITHUB_SHA::7}
 
     - name: Run unit tests
-      run: npm test
+      run: npm test  
 
     - name: Deploy with Terraform
       run: |
         terraform init
         terraform apply -auto-approve
 
-   
+    
