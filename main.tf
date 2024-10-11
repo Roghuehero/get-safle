@@ -10,7 +10,7 @@ variable "gcp_credentials" {
 }
 
 variable "ssh_public_key" {
-  type = string
+  type      = string
   sensitive = true
 }
 
@@ -27,10 +27,10 @@ resource "google_compute_network" "vpc_network3" {
 
 # Subnet (created only if network is created)
 resource "google_compute_subnetwork" "subnet3" {
-  count    = length(data.google_compute_network.existing_vpc_network3.name) == 0 ? 1 : 0
-  name     = "get-safle-subnet"
-  region   = "asia-south2"
-  network  = google_compute_network.vpc_network3[0].id
+  count       = length(data.google_compute_network.existing_vpc_network3.name) == 0 ? 1 : 0
+  name        = "get-safle-subnet"
+  region      = "asia-south2"
+  network     = google_compute_network.vpc_network3[0].id
   ip_cidr_range = "10.0.0.0/16"
 }
 
@@ -91,8 +91,8 @@ resource "google_compute_region_autoscaler" "app_autoscaler3" {
 
 # Load Balancer Backend Service
 resource "google_compute_backend_service" "app_backend3" {
-  name   = "get-safle-backend-service"
-  region = "asia-south2"
+  name = "get-safle-backend-service"
+
   backend {
     group = google_compute_region_instance_group_manager.app_group3.instance_group
   }
@@ -106,7 +106,7 @@ resource "google_compute_url_map" "app_url_map3" {
 
 # HTTP Proxy
 resource "google_compute_target_http_proxy" "app_http_proxy3" {
-  name   = "get-safle-http-proxy"
+  name    = "get-safle-http-proxy"
   url_map = google_compute_url_map.app_url_map3.id
 }
 
