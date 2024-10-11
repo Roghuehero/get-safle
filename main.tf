@@ -1,11 +1,12 @@
 provider "google" {
   project     = "get-safle"
   region      = "asia-south2"
-  credentials = file("${var.gcp_credentials_file}")
+  credentials = var.gcp_credentials
 }
 
-variable "gcp_credentials_file" {
-  type = string
+variable "gcp_credentials" {
+  type      = string
+  sensitive = true
 }
 
 variable "ssh_public_key" {
